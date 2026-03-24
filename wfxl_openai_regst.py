@@ -23,6 +23,9 @@ import urllib.request
 import urllib.error
 from html import unescape
 import imaplib
+import socks
+import socket
+import ssl
 from email import message_from_string
 from email.header import decode_header, make_header
 from email.message import Message
@@ -38,12 +41,12 @@ EMAIL_API_MODE = "cloudflare_temp_email"
 
 # [公共配置: cloudflare_temp_email / imap 共享]
 MAIL_DOMAINS = "domain1.com,domain2.xyz,domain3.net" # 你的域名 (支持逗号分隔多域名随机轮换) 如果只有一个域名就只填一个域名
-GPTMAIL_BASE = "https://your-domain.com"     # 你的临时邮箱 后端API 基础地址 结尾不要/，注意：用浏览器打开后端api验证是否可访问
+GPTMAIL_BASE = "https://your-domain.com"     # 你的临时邮箱 后端API 基础地址 结尾不要/
 
 # [模式 "imap" 专属配置] (CF Catch-all 转发接收端)
 IMAP_SERVER = "imap.qq.com"           # 默认为QQ IMAP 服务器地址,谷歌为imap.gmail.com
 IMAP_PORT = 993                          # IMAP 端口
-IMAP_USER = "邮箱" # 接收转发的真实邮箱账号
+IMAP_USER = "QQ邮箱" # 接收转发的真实邮箱账号
 IMAP_PASS = "专用密码"          # 16位应用专用密码，谷歌邮箱要去https://myaccount.google.com/apppasswords这里创建专属应用密码
 
 # [模式 "freemail" 专属]
@@ -53,9 +56,9 @@ FREEMAIL_API_TOKEN = ""
 # [模式 "cloudflare_temp_email" 专属配置]
 ADMIN_AUTH = "" # 你的临时邮箱管理员密码
 
-DEFAULT_PROXY = "" #openai注册时代理地址，例子：http://127.0.0.1:7897
+DEFAULT_PROXY = "" #openai注册时代理地址，例子：http://127.0.0.1:7897。如果是国外服务器此项可以不填
 # [邮箱代理专项配置]
-USE_PROXY_FOR_EMAIL = False  # 【开关】True 表示获取邮箱也用代理，False 表示直连（推荐先试 False）
+USE_PROXY_FOR_EMAIL = False  # 【开关】True 表示获取邮箱也用代理，False 表示直连（推荐先试 False）如果是国外服务器此项可以保持False
 TOKEN_OUTPUT_DIR = os.getenv("TOKEN_OUTPUT_DIR", "").strip() #目录 默认存放跟脚本一个目录
 # ================= 这里不要动 =================
 AUTH_URL = "https://auth.openai.com/oauth/authorize"
@@ -255,6 +258,21 @@ def _extract_otp_code(content: str) -> str:
     fallback = re.search(r"(?<!\d)(\d{6})(?!\d)", content)
     return fallback.group(1) if fallback else ""
 
+class ProxiedIMAP4_SSL(imaplib.IMAP4_SSL):
+    def __init__(self, host, port, proxy_host, proxy_port, proxy_type, **kwargs):
+        self.proxy_host = proxy_host
+        self.proxy_port = proxy_port
+        self.proxy_type = proxy_type
+        self.timeout_val = kwargs.pop('timeout', 60)
+        super().__init__(host, port, **kwargs)
+
+    def _create_socket(self, timeout):
+        sock = socks.socksocket()
+        sock.set_proxy(self.proxy_type, self.proxy_host, self.proxy_port)
+        sock.settimeout(self.timeout_val)
+        sock.connect((self.host, self.port))
+        return sock
+
 def get_oai_code(email: str, jwt: str = "", proxies: Any = None, processed_mail_ids: set = None, pattern: str = OTP_CODE_PATTERN) -> str:
     """基于 Mail ID 过滤的验证码提取 (支持 JWT 或 Admin 双重鉴权)"""
     mail_proxies = proxies if USE_PROXY_FOR_EMAIL else None
@@ -263,11 +281,41 @@ def get_oai_code(email: str, jwt: str = "", proxies: Any = None, processed_mail_
 
     if processed_mail_ids is None:
         processed_mail_ids = set()
-        
+    def create_imap_conn():
+        if USE_PROXY_FOR_EMAIL and DEFAULT_PROXY and IMAP_SERVER.lower() == "imap.gmail.com":
+            try:
+                import socks
+                import socket
+            except ImportError:
+                print(f"\n[{ts()}] [WARNING] 未安装 pysocks，回退到直连。")
+                return imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=15)
+            
+            print(f"\n[{ts()}] [INFO] 正在为 IMAP 注入底层代理穿透...")
+            try:
+                parsed = urlparse(DEFAULT_PROXY)
+                proxy_host = parsed.hostname
+                proxy_port = parsed.port or 80
+                proxy_type = socks.HTTP if parsed.scheme.lower() in ['http', 'https'] else socks.SOCKS5
+                
+                original_socket = socket.socket
+                
+                try:
+                    socks.set_default_proxy(proxy_type, proxy_host, proxy_port)
+                    socket.socket = socks.socksocket
+                    conn = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=20)
+                    return conn
+                finally:
+                    socket.socket = original_socket
+                    
+            except Exception as e:
+                print(f"\n[{ts()}] [ERROR] IMAP 代理注入失败: {e}，尝试回退到直连。")
+                return imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=15)
+        else:
+            return imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=15)
     mail_conn = None
     if EMAIL_API_MODE == "imap":
         try:
-            mail_conn = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT, timeout=15)
+            mail_conn = create_imap_conn()
             clean_pass = IMAP_PASS.replace(" ", "")
             mail_conn.login(IMAP_USER, clean_pass)
         except Exception as e:
@@ -292,8 +340,9 @@ def get_oai_code(email: str, jwt: str = "", proxies: Any = None, processed_mail_
                     try:
                         status, _ = mail_conn.select(folder, readonly=True)
                         if status != 'OK': continue
+                        search_query = f'(FROM "openai.com" TO "{email}")'
+                        status, messages = mail_conn.search(None, search_query)
                         
-                        status, messages = mail_conn.search(None, '(FROM "openai.com")')
                         if status == 'OK' and messages[0]:
                             mail_ids = messages[0].split()
                             latest_id = mail_ids[-1]
