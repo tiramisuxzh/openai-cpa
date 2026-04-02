@@ -2,7 +2,8 @@ import sqlite3
 import json
 from datetime import datetime
 
-DB_PATH = "data.db"
+os.makedirs("data", exist_ok=True)
+DB_PATH = "data/data.db"
 
 def ts() -> str:
     return datetime.now().strftime("%H:%M:%S")
