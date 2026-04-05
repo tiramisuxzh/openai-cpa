@@ -36,7 +36,7 @@ def reload_proxy_config():
     global CLASH_API_URL, LOCAL_PROXY_URL, ENABLE_NODE_SWITCH, POOL_MODE, \
            FASTEST_MODE, PROXY_GROUP_NAME, CLASH_SECRET, NODE_BLACKLIST
 
-    config_path = "config.yaml"
+    config_path = os.path.join("data", "config.yaml")
     if not os.path.exists(config_path):
         print(f"[{ts()}] [WARNING] 配置文件 {config_path} 不存在，使用默认代理设置。")
         conf_data = {}
