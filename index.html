@@ -101,6 +101,9 @@
                     </button>
                 </nav>
                 <div class="hidden md:block p-4 border-t border-gray-800 shrink-0 mt-auto">
+                    <button @click="restartSystem" class="w-full flex items-center justify-center gap-2 text-xs text-yellow-500 hover:text-yellow-400 py-2 mb-2 rounded hover:bg-gray-800 transition border border-yellow-900/30">
+                        <span>⚡</span>重启项目
+                    </button>
                     <button @click="checkUpdate(true)" class="w-full flex items-center justify-center gap-2 text-xs text-blue-400 hover:text-blue-300 py-2 mb-2 rounded hover:bg-gray-800 transition border border-blue-900/30">
                         <span>🔄</span>检查系统更新
                     </button>

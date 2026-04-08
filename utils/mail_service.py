@@ -394,7 +394,7 @@ def get_email_and_token(proxies: Any = None) -> tuple:
         for attempt in range(5):
             if getattr(cfg, 'GLOBAL_STOP', False): return None, None
             try:
-                res = requests.post(f"{cfg.FREEMAIL_API_URL.rstrip('/')}/api/create",
+                res = requests.post(f"{cfg.FREEMAIL_API_URL}/api/create",
                                     json={"email": email_str}, headers=headers,
                                     proxies=mail_proxies, verify=_ssl_verify(), timeout=15)
                 res.raise_for_status()
@@ -945,7 +945,7 @@ def get_oai_code(
                     "Authorization": f"Bearer {cfg.FREEMAIL_API_TOKEN}"
                 }
 
-                res = requests.get(f"{cfg.FREEMAIL_API_URL.rstrip('/')}/api/emails",
+                res = requests.get(f"{cfg.FREEMAIL_API_URL}/api/emails",
                                    params={"mailbox": email, "limit": 20},
                                    headers=headers, proxies=mail_proxies, verify=_ssl_verify(), timeout=15)
                 if res.status_code == 200:
@@ -972,7 +972,7 @@ def get_oai_code(
                         if not code:
                             try:
                                 dr = requests.get(
-                                    f"{cfg.FREEMAIL_API_URL.rstrip('/')}/api/email/{mail_id}",
+                                    f"{cfg.FREEMAIL_API_URL}/api/email/{mail_id}",
                                     headers=headers, proxies=mail_proxies,
                                     verify=_ssl_verify(), timeout=15,
                                 )

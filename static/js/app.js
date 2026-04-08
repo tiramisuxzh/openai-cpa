@@ -1000,6 +1000,30 @@ createApp({
             } finally {
                 this.gmailOAuth.isLoading = false;
             }
-        }
+        },
+        async restartSystem() {
+            const confirmed = await this.customConfirm("⚠️ 危险操作：\n\n确定要重启整个后端系统吗？\n如果当前有任务正在运行，将会被强制中断！");
+            if (!confirmed) return;
+
+            try {
+                this.showToast("🚀 正在向服务器发送重启指令...", "info");
+                const res = await this.authFetch('/api/system/restart', { method: 'POST' });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    this.showToast("✅ 系统正在重启，网页将于 6 秒后自动刷新...", "success");
+                    if(this.statsTimer) clearInterval(this.statsTimer);
+                    if(this.evtSource) this.evtSource.close();
+
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 6000);
+                } else {
+                    this.showToast(data.message || "重启指令发送失败", "error");
+                }
+            } catch (e) {
+                this.showToast("请求异常，请检查后端状态", "error");
+            }
+        },
     }
 }).mount('#app');
