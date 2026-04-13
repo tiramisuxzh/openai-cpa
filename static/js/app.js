@@ -3,7 +3,7 @@ const { createApp } = Vue;
 createApp({
     data() {
         return {
-            appVersion: 'v10.0.0',
+            appVersion: 'v10.0.1',
             isLoggedIn: !!localStorage.getItem('auth_token'),
             loginPassword: '',
             currentTab: window.location.hash.replace('#', '') || 'console',
@@ -241,11 +241,16 @@ createApp({
 
                 if (this.config?.reg_mode === 'extension') {
                     data.target = this.config?.normal_mode?.target_count || 0;
-                    this.isRunning = this.isRunning;
+                    const wasRunning = this.isRunning;
+                    this.isRunning = data.is_running;
                     if (this.isRunning) {
                         this.stats.mode = '插件托管运行中...';
                         if (parseFloat(data.elapsed) <= 0) {
-                            this.stats.elapsed = "0.0s"
+                            this.stats.elapsed = "0.0s";
+                        }
+                        if (!wasRunning && this.isExtConnected && !this._extDispatchTimer) {
+                            console.log("[总控] 同步到全局运行状态，当前节点自动加入生产线...");
+                            this.dispatchExtensionTask();
                         }
                     }
                 this.stats = data;
@@ -560,7 +565,8 @@ createApp({
                     }
                     if (this.config?.reg_mode === 'extension') {
                         window.postMessage({ type: "CMD_STOP_WORKER" }, "*");
-                        this.showToast("已向插件发送停止指令", "info");
+                        await this.authFetch('/api/ext/stop', { method: 'POST' });
+                        this.showToast("已向集群发送停止指令", "info");
                     } else {
                         await this.stopTask();
                     }
