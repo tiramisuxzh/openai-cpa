@@ -321,10 +321,8 @@ async def restart_system(token: str = Depends(verify_token)):
 
 @router.get("/api/config")
 async def get_config(token: str = Depends(verify_token)):
-    config_data = {}
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            config_data = yaml.safe_load(f) or {}
+    config_data = getattr(core_engine.cfg, '_c', {}).copy()
+
     if isinstance(config_data.get("sub2api_mode"), dict):
         config_data["sub2api_mode"].pop("min_remaining_weekly_percent", None)
     config_data["web_password"] = config_data.get("web_password", "admin")
@@ -335,8 +333,6 @@ async def get_config(token: str = Depends(verify_token)):
             "client_id": "",
             "refresh_token": ""
         }
-
-
     return config_data
 
 
@@ -345,14 +341,9 @@ async def save_config(new_config: dict, token: str = Depends(verify_token)):
     try:
         if isinstance(new_config.get("sub2api_mode"), dict):
             new_config["sub2api_mode"].pop("min_remaining_weekly_percent", None)
-        with core_engine.cfg.CONFIG_FILE_LOCK:
-            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                yaml.dump(new_config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
-        try:
-            reload_all_configs()
-        except Exception:
-            pass
-        return {"status": "success", "message": "✅ 配置已成功保存！"}
+        reload_all_configs(new_config_dict=new_config)
+
+        return {"status": "success", "message": "✅ 配置已成功保存并同步至云端！"}
     except Exception as e:
         return {"status": "error", "message": f"❌ 保存失败: {str(e)}"}
 
@@ -1117,13 +1108,17 @@ async def exchange_outlook_oauth_code(req: OutlookExchangeReq, token: str = Depe
         if response.status_code == 200:
             refresh_token = data.get("refresh_token")
             import sqlite3
-            from utils.db_manager import DB_PATH
-            with sqlite3.connect(DB_PATH, timeout=10) as conn:
-                conn.execute(
-                    "UPDATE local_mailboxes SET client_id = ?, refresh_token = ?, status = 0 WHERE email = ?",
-                    (req.client_id, refresh_token, req.email)
-                )
-                conn.commit()
+            from utils.db_manager import get_db_conn, get_cursor, execute_sql
+            try:
+                with get_db_conn() as conn:
+                    c = get_cursor(conn)
+                    execute_sql(c,
+                                "UPDATE local_mailboxes SET client_id = ?, refresh_token = ?, status = 0 WHERE email = ?",
+                                (req.client_id, refresh_token, req.email)
+                                )
+            except Exception as e:
+                print(f"[ERROR] 数据库更新 OAuth Token 失败: {e}")
+
             return {"status": "success", "message": f"授权成功！已为 {req.email} 绑定永久 Token。", "refresh_token": refresh_token}
         else:
             return {"status": "error", "message": f"获取失败: {data.get('error_description', data)}"}

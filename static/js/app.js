@@ -84,6 +84,7 @@ createApp({
                 fvia_token: false,
                 subUrl: false,
                 showMailboxesPlaintext: false,
+                db_pass: false,
                 master_rt: false
             },
 
@@ -325,6 +326,15 @@ createApp({
                 }
                 if (!this.config.tg_bot.template_stop) {
                     this.config.tg_bot.template_stop = "🛑 <b>系统已收到停止指令</b>\n\n📊 <b>最终运行统计</b>：\n成功率: {success_rate}% · 成功: {success}/{target} · 失败: {failed} 次 · 风控拦截: {retries} 次 · 密码受阻: {pwd_blocked} 次 · 出现手机: {phone_verify} 次 · 总耗时: {elapsed_time}s · 平均单号: {avg_time}s";
+                }
+                if (!this.config.database) {
+                    this.config.database = {
+                        type: 'sqlite',
+                        mysql: { host: '127.0.0.1', port: 3306, user: 'root', password: '', db_name: 'wenfxl_manager' }
+                    };
+                }
+                if (!this.config.database.mysql) {
+                    this.config.database.mysql = { host: '127.0.0.1', port: 3306, user: 'root', password: '', db_name: 'wenfxl_manager' };
                 }
 				if (!this.config.sub_domain_level) {
                     this.config.sub_domain_level = 1;
